@@ -755,12 +755,13 @@ class ComplexityRouter(CustomLogger):
             - score: The raw weighted score
             - signals: List of triggered signals for debugging
         """
-        # Combine text for analysis.
-        # System prompt is intentionally included in code/technical/simple scoring
-        # because it provides deployment-level context (e.g., "You are a Python assistant"
-        # signals that code-capable models are appropriate). Reasoning markers use
-        # user_text only to prevent system prompts from forcing REASONING tier.
-        full_text: Final = f"{system_prompt or ''} {prompt}".lower()
+        # Score the caller's ask only. The system prompt is a per-session constant, so it
+        # carries no information about how requests within a session differ, yet it
+        # saturates the keyword thresholds (codePresence trips at 2 matches, which any
+        # agent identity prompt clears on its first line) while spending 0.63 of the
+        # dimension weight budget. That collapses the scorer's dynamic range and escalates
+        # every request alike. reasoningMarkers was already scoped this way for the same
+        # reason. Deployment-level model capability is expressed in tier config instead.
         user_text: Final = prompt.lower()
 
         # Estimate tokens
@@ -768,7 +769,7 @@ class ComplexityRouter(CustomLogger):
 
         # Score all dimensions, capturing match counts where needed
         code_score, _ = self._score_keyword_match(
-            full_text,
+            user_text,
             user_text,
             self.code_keywords,
             "codePresence",
@@ -786,7 +787,7 @@ class ComplexityRouter(CustomLogger):
             (0, 0.7, 1.0),
         )
         technical_score, _ = self._score_keyword_match(
-            full_text,
+            user_text,
             user_text,
             self.technical_keywords,
             "technicalTerms",
@@ -795,7 +796,7 @@ class ComplexityRouter(CustomLogger):
             (0, 0.5, 1.0),
         )
         simple_score, _ = self._score_keyword_match(
-            full_text,
+            user_text,
             user_text,
             self.simple_keywords,
             "simpleIndicators",
@@ -810,7 +811,7 @@ class ComplexityRouter(CustomLogger):
             reasoning_score,
             technical_score,
             simple_score,
-            self._score_multi_step(full_text),
+            self._score_multi_step(user_text),
             self._score_question_complexity(prompt),
         ]
 
